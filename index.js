@@ -5,7 +5,11 @@ const nodeNotifier = require("node-notifier");
 const yargs = require("yargs/yargs");
 const { hideBin } = require("yargs/helpers");
 
-const options = yargs(hideBin(process.argv)).argv;
+const options = yargs(hideBin(process.argv))
+  .option("postalCode", { type: "string", demandOption: true })
+  .option("tolerance", { default: 5, type: "number" })
+  .option("distance", { default: 10, type: "number" })
+  .option("poll", { default: 1, type: "number" }).argv;
 
 const wait = (minutes) =>
   new Promise((resolve) => setTimeout(resolve, minutes * 60 * 1000));
@@ -60,8 +64,9 @@ const getPlaces = async ({
   longitude,
   startDate,
   endDate,
-  maxDistance = 10,
+  maxDistance,
   postalCode,
+  tolerance,
 }) => {
   let page = 0;
   let places = [];
@@ -111,14 +116,13 @@ const getPlaces = async ({
     .filter(
       (place) =>
         place.availabilities.length &&
-        moment(place.availabilities[0]).diff(moment(), "days") <=
-          (parseInt(options.tolerance, 10) || 5)
+        moment(place.availabilities[0]).diff(moment(), "days") <= tolerance
     )
     .sort((a, b) => a.distance - b.distance);
 };
 
 const outputAvailabilities = async () => {
-  const postalCode = options.postalCode;
+  const { postalCode, distance, tolerance } = options;
   const startDate = moment().format("YYYY-MM-DD");
   const endDate = moment().add(90, "days").format("YYYY-MM-DD");
 
@@ -130,7 +134,8 @@ const outputAvailabilities = async () => {
     startDate,
     endDate,
     postalCode,
-    maxDistance: parseInt(options.distance, 10) || undefined,
+    maxDistance: distance,
+    tolerance,
   });
 
   for (const place of places) {
@@ -156,7 +161,7 @@ const outputAvailabilities = async () => {
 const loop = async () => {
   while (true) {
     await outputAvailabilities();
-    await wait(1);
+    await wait(options.poll);
   }
 };
 

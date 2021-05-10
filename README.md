@@ -9,3 +9,4 @@ Script that checks for vaccination appointments near you
 - `postalCode` - The reference postal code to search around (mandatory)
 - `tolerance` - Check for appointments in the next X days (defaults to 5, optional)
 - `distance` - Max distance away from postalCode in km (defaults to 10, optional)
+- `poll` - Polling refresh rate in minutes (defaults to 1, optional)
