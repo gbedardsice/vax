@@ -105,7 +105,8 @@ const getPlaces = async ({
   return places.filter(
     (place) =>
       place.availabilities.length &&
-      moment(place.availabilities[0]).diff(moment(), "days") <= 5
+      moment(place.availabilities[0]).diff(moment(), "days") <=
+        (parseInt(options.tolerance, 10) || 5)
   );
 };
 
