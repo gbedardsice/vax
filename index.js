@@ -96,7 +96,7 @@ const getPlaces = async ({
     page += 1;
   }
 
-  console.log(`Found ${places.length} places.`);
+  console.log(`Querying ${places.length} locations for availabilities...`);
 
   for (const place of places) {
     place.distance = distances[place.id];
@@ -111,6 +111,8 @@ const getPlaces = async ({
       endDate,
     });
   }
+
+  console.log("Done.");
 
   return places
     .filter(
