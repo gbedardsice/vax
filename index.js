@@ -65,13 +65,14 @@ const getPlaces = async ({
 }) => {
   let page = 0;
   let places = [];
+  let distances = {};
 
   while (page !== -1) {
     const result = await fetch(
       `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
     );
 
-    const { places: pagePlaces } = result;
+    const { places: pagePlaces, distanceByPlaces } = result;
 
     if (!pagePlaces?.length) {
       page = -1;
@@ -85,12 +86,16 @@ const getPlaces = async ({
       ),
     ];
 
+    distances = { ...distances, ...distanceByPlaces };
+
     page += 1;
   }
 
   console.log(`Found ${places.length} places.`);
 
   for (const place of places) {
+    place.distance = distances[place.id];
+
     place.serviceId = await getServiceId({
       establishmentId: place.establishment,
     });
@@ -102,12 +107,14 @@ const getPlaces = async ({
     });
   }
 
-  return places.filter(
-    (place) =>
-      place.availabilities.length &&
-      moment(place.availabilities[0]).diff(moment(), "days") <=
-        (parseInt(options.tolerance, 10) || 5)
-  );
+  return places
+    .filter(
+      (place) =>
+        place.availabilities.length &&
+        moment(place.availabilities[0]).diff(moment(), "days") <=
+          (parseInt(options.tolerance, 10) || 5)
+    )
+    .sort((a, b) => a.distance - b.distance);
 };
 
 const outputAvailabilities = async () => {
@@ -123,6 +130,7 @@ const outputAvailabilities = async () => {
     startDate,
     endDate,
     postalCode,
+    maxDistance: parseInt(options.distance, 10) || undefined,
   });
 
   for (const place of places) {
@@ -134,6 +142,7 @@ const outputAvailabilities = async () => {
     console.log(`
       Name: ${place.name_fr}
       Address: ${place.formatted_address}
+      Distance: ${place.distance}km
       Availabilities: ${place.availabilities.join(", ")}
       RDV: https://clients3.clicsante.ca/${
         place.establishment
