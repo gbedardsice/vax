@@ -59,6 +59,8 @@ const getAvailabilities = async ({ place, startDate, endDate }) => {
   return availabilities || [];
 };
 
+let places = [];
+
 const getPlaces = async ({
   latitude,
   longitude,
@@ -69,42 +71,50 @@ const getPlaces = async ({
   tolerance,
 }) => {
   let page = 0;
-  let places = [];
   let distances = {};
 
-  while (page !== -1) {
-    const result = await fetch(
-      `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
-    );
+  if (!places.length) {
+    console.log("Populating locations...");
 
-    const { places: pagePlaces, distanceByPlaces } = result;
+    while (page !== -1) {
+      const result = await fetch(
+        `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
+      );
 
-    if (!pagePlaces?.length) {
-      page = -1;
-      break;
+      const { places: pagePlaces, distanceByPlaces } = result;
+
+      if (!pagePlaces?.length) {
+        page = -1;
+        break;
+      }
+
+      places = [
+        ...places,
+        ...pagePlaces.filter(
+          (place) =>
+            place["name_fr"].toLowerCase().indexOf("astrazeneca") === -1
+        ),
+      ];
+
+      distances = { ...distances, ...distanceByPlaces };
+
+      page += 1;
     }
 
-    places = [
-      ...places,
-      ...pagePlaces.filter(
-        (place) => place["name_fr"].toLowerCase().indexOf("astrazeneca") === -1
-      ),
-    ];
+    for (const place of places) {
+      place.distance = distances[place.id];
 
-    distances = { ...distances, ...distanceByPlaces };
+      place.serviceId = await getServiceId({
+        establishmentId: place.establishment,
+      });
+    }
 
-    page += 1;
+    console.log("Done.");
   }
 
   console.log(`Querying ${places.length} locations for availabilities...`);
 
   for (const place of places) {
-    place.distance = distances[place.id];
-
-    place.serviceId = await getServiceId({
-      establishmentId: place.establishment,
-    });
-
     place.availabilities = await getAvailabilities({
       place,
       startDate,
@@ -163,6 +173,9 @@ const outputAvailabilities = async () => {
 const loop = async () => {
   while (true) {
     await outputAvailabilities();
+
+    console.log(`Waiting ${options.poll} minute(s) before querying again...`);
+
     await wait(options.poll);
   }
 };
