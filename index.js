@@ -89,7 +89,7 @@ const getPlaces = memoize(
 
       const { places: pagePlaces, distanceByPlaces } = result;
 
-      if (!pagePlaces?.length) {
+      if (!pagePlaces || !pagePlaces.length) {
         page = -1;
         break;
       }
