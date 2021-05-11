@@ -4,6 +4,7 @@ const notifier = require("node-notifier");
 const nodeNotifier = require("node-notifier");
 const ora = require("ora");
 const AsciiTable = require("ascii-table");
+const { memoize, isEqual } = require("lodash");
 const yargs = require("yargs/yargs");
 const { hideBin } = require("yargs/helpers");
 
@@ -34,7 +35,7 @@ const fetch = (url, opts = {}) => {
     .catch((e) => ({}));
 };
 
-const getGeometry = async ({ postalCode }) => {
+const getGeometry = memoize(async ({ postalCode }) => {
   const {
     results: [
       {
@@ -46,7 +47,7 @@ const getGeometry = async ({ postalCode }) => {
   } = await fetch(`https://api3.clicsante.ca/v3/geocode?address=${postalCode}`);
 
   return { latitude, longitude };
-};
+}, isEqual);
 
 const getServiceId = async ({ establishmentId }) => {
   const [{ id }] = await fetch(
@@ -55,7 +56,7 @@ const getServiceId = async ({ establishmentId }) => {
   return id;
 };
 
-const getAvailabilities = async ({ place, startDate, endDate }) => {
+const getAvailabilitiesForPlace = async ({ place, startDate, endDate }) => {
   const { availabilities } = await fetch(
     `https://api3.clicsante.ca/v3/establishments/${place.establishment}/schedules/public?dateStart=${startDate}&dateStop=${endDate}&service=${place.serviceId}&timezone=America/Toronto&places=${place.id}&filter1=1&filter2=0`
   );
@@ -63,62 +64,67 @@ const getAvailabilities = async ({ place, startDate, endDate }) => {
   return availabilities || [];
 };
 
-let places = [];
+const getPlaces = memoize(
+  async ({
+    latitude,
+    longitude,
+    startDate,
+    endDate,
+    maxDistance,
+    postalCode,
+    tolerance,
+  }) => {
+    let page = 0;
+    let distances = {};
+    let places = [];
 
-const populatePlaces = async ({
-  latitude,
-  longitude,
-  startDate,
-  endDate,
-  maxDistance,
-  postalCode,
-  tolerance,
-}) => {
-  let page = 0;
-  let distances = {};
+    const spinner = ora(`Populating locations near ${postalCode}..`).start();
 
-  const spinner = ora(`Populating locations near ${postalCode}..`).start();
+    while (page !== -1) {
+      const result = await fetch(
+        `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
+      );
 
-  while (page !== -1) {
-    const result = await fetch(
-      `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
-    );
+      const { places: pagePlaces, distanceByPlaces } = result;
 
-    const { places: pagePlaces, distanceByPlaces } = result;
+      if (!pagePlaces?.length) {
+        page = -1;
+        break;
+      }
 
-    if (!pagePlaces?.length) {
-      page = -1;
-      break;
+      places = [
+        ...places,
+        ...pagePlaces.filter(
+          (place) =>
+            place["name_fr"].toLowerCase().indexOf("astrazeneca") === -1
+        ),
+      ];
+
+      distances = { ...distances, ...distanceByPlaces };
+
+      page += 1;
     }
 
-    places = [
-      ...places,
-      ...pagePlaces.filter(
-        (place) => place["name_fr"].toLowerCase().indexOf("astrazeneca") === -1
-      ),
-    ];
+    for (const place of places) {
+      place.distance = distances[place.id];
+    }
 
-    distances = { ...distances, ...distanceByPlaces };
+    await Promise.all(
+      places.map(async (place) => {
+        place.serviceId = await getServiceId({
+          establishmentId: place.establishment,
+        });
+      })
+    );
 
-    page += 1;
-  }
+    spinner.succeed();
 
-  for (const place of places) {
-    place.distance = distances[place.id];
-  }
+    return places;
+  },
+  isEqual
+);
 
-  await Promise.all(
-    places.map(async (place) => {
-      place.serviceId = await getServiceId({
-        establishmentId: place.establishment,
-      });
-    })
-  );
-
-  spinner.succeed();
-};
-
-const getPlaces = async ({
+const getAvailabilities = async ({
   latitude,
   longitude,
   startDate,
@@ -128,17 +134,15 @@ const getPlaces = async ({
   tolerance,
   specificDate,
 }) => {
-  if (!places.length) {
-    await populatePlaces({
-      latitude,
-      longitude,
-      startDate,
-      endDate,
-      maxDistance,
-      postalCode,
-      tolerance,
-    });
-  }
+  const places = await getPlaces({
+    latitude,
+    longitude,
+    startDate,
+    endDate,
+    maxDistance,
+    postalCode,
+    tolerance,
+  });
 
   const spinner = ora(
     `Checking ${places.length} locations within ${maxDistance}km of ${postalCode} for availabilities...`
@@ -146,7 +150,7 @@ const getPlaces = async ({
 
   await Promise.all(
     places.map(async (place) => {
-      place.availabilities = await getAvailabilities({
+      place.availabilities = await getAvailabilitiesForPlace({
         place,
         startDate,
         endDate,
@@ -174,7 +178,7 @@ const outputAvailabilities = async () => {
 
   const { latitude, longitude } = await getGeometry({ postalCode });
 
-  const places = await getPlaces({
+  const places = await getAvailabilities({
     latitude,
     longitude,
     startDate,
@@ -203,6 +207,7 @@ const outputAvailabilities = async () => {
       .addRow(
         `https://clients3.clicsante.ca/${place.establishment}/take-appt?unifiedService=237&portalPlace=${place.id}&portalPostalCode=${postalCode}&lang=fr`
       );
+
     console.log(table.toString(), "\n");
   }
 };
