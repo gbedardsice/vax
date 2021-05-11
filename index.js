@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const nodeFetch = require("node-fetch");
 const moment = require("moment");
 const notifier = require("node-notifier");
