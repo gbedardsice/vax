@@ -9,9 +9,11 @@
   "author": "gbedardsice",
   "license": "MIT",
   "dependencies": {
+    "ascii-table": "^0.0.9",
     "moment": "^2.29.1",
     "node-fetch": "^2.6.1",
     "node-notifier": "^9.0.1",
+    "ora": "^5.4.0",
     "yargs": "^17.0.1"
   }
 }

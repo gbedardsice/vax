@@ -2,6 +2,8 @@ const nodeFetch = require("node-fetch");
 const moment = require("moment");
 const notifier = require("node-notifier");
 const nodeNotifier = require("node-notifier");
+const ora = require("ora");
+const AsciiTable = require("ascii-table");
 const yargs = require("yargs/yargs");
 const { hideBin } = require("yargs/helpers");
 
@@ -15,8 +17,6 @@ const wait = (minutes) =>
   new Promise((resolve) => setTimeout(resolve, minutes * 60 * 1000));
 
 const fetch = (url, opts = {}) => {
-  // console.log(`GET ${url}`);
-
   return nodeFetch(url, {
     ...opts,
     headers: {
@@ -74,7 +74,7 @@ const getPlaces = async ({
   let distances = {};
 
   if (!places.length) {
-    console.log("Populating locations...");
+    const spinner = ora(`Populating locations near ${postalCode}..`).start();
 
     while (page !== -1) {
       const result = await fetch(
@@ -103,26 +103,34 @@ const getPlaces = async ({
 
     for (const place of places) {
       place.distance = distances[place.id];
-
-      place.serviceId = await getServiceId({
-        establishmentId: place.establishment,
-      });
     }
 
-    console.log("Done.");
+    await Promise.all(
+      places.map(async (place) => {
+        place.serviceId = await getServiceId({
+          establishmentId: place.establishment,
+        });
+      })
+    );
+
+    spinner.succeed();
   }
 
-  console.log(`Querying ${places.length} locations for availabilities...`);
+  const availabilitiesSpinner = ora(
+    `Checking ${places.length} locations within ${maxDistance}km of ${postalCode} for availabilities...`
+  ).start();
 
-  for (const place of places) {
-    place.availabilities = await getAvailabilities({
-      place,
-      startDate,
-      endDate,
-    });
-  }
+  await Promise.all(
+    places.map(async (place) => {
+      place.availabilities = await getAvailabilities({
+        place,
+        startDate,
+        endDate,
+      });
+    })
+  );
 
-  console.log("Done.");
+  availabilitiesSpinner.succeed();
 
   return places
     .filter(
@@ -150,23 +158,25 @@ const outputAvailabilities = async () => {
     tolerance,
   });
 
+  if (!places.length) return;
+
   for (const place of places) {
     notifier.notify({
       message: `${place.name_fr} has an availibility on ${place.availabilities[0]}`,
       sound: true,
     });
 
-    console.log(`
-      Name: ${place.name_fr}
-      Address: ${place.formatted_address}
-      Distance: ${place.distance}km
-      Availabilities: ${place.availabilities.join(", ")}
-      RDV: https://clients3.clicsante.ca/${
-        place.establishment
-      }/take-appt?unifiedService=237&portalPlace=${
-      place.id
-    }&portalPostalCode=${postalCode}&lang=fr
-    `);
+    const table = new AsciiTable();
+
+    table
+      .addRow(place.name_fr)
+      .addRow(place.formatted_address)
+      .addRow(`Distance: ${place.distance}km`)
+      .addRow(`Availabilities: ${place.availabilities.join(", ")}`)
+      .addRow(
+        `https://clients3.clicsante.ca/${place.establishment}/take-appt?unifiedService=237&portalPlace=${place.id}&portalPostalCode=${postalCode}&lang=fr`
+      );
+    console.log(table.toString(), "\n");
   }
 };
 
@@ -174,9 +184,14 @@ const loop = async () => {
   while (true) {
     await outputAvailabilities();
 
-    console.log(`Waiting ${options.poll} minute(s) before querying again...`);
+    const spinner = ora({
+      text: `Waiting ${options.poll} minute(s) before checking again...`,
+      spinner: "soccerHeader",
+    }).start();
 
     await wait(options.poll);
+
+    spinner.succeed();
   }
 };
 
