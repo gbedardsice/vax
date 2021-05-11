@@ -11,10 +11,14 @@ const options = yargs(hideBin(process.argv))
   .option("postalCode", { type: "string", demandOption: true })
   .option("tolerance", { default: 5, type: "number" })
   .option("distance", { default: 10, type: "number" })
-  .option("poll", { default: 1, type: "number" }).argv;
+  .option("poll", { default: 1, type: "number" })
+  .option("specificDate", { type: "string" }).argv;
 
 const wait = (minutes) =>
   new Promise((resolve) => setTimeout(resolve, minutes * 60 * 1000));
+
+const isWithinDays = (date, days) =>
+  moment(date).diff(moment(), "days") <= days;
 
 const fetch = (url, opts = {}) => {
   return nodeFetch(url, {
@@ -61,7 +65,7 @@ const getAvailabilities = async ({ place, startDate, endDate }) => {
 
 let places = [];
 
-const getPlaces = async ({
+const populatePlaces = async ({
   latitude,
   longitude,
   startDate,
@@ -73,50 +77,70 @@ const getPlaces = async ({
   let page = 0;
   let distances = {};
 
-  if (!places.length) {
-    const spinner = ora(`Populating locations near ${postalCode}..`).start();
+  const spinner = ora(`Populating locations near ${postalCode}..`).start();
 
-    while (page !== -1) {
-      const result = await fetch(
-        `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
-      );
-
-      const { places: pagePlaces, distanceByPlaces } = result;
-
-      if (!pagePlaces?.length) {
-        page = -1;
-        break;
-      }
-
-      places = [
-        ...places,
-        ...pagePlaces.filter(
-          (place) =>
-            place["name_fr"].toLowerCase().indexOf("astrazeneca") === -1
-        ),
-      ];
-
-      distances = { ...distances, ...distanceByPlaces };
-
-      page += 1;
-    }
-
-    for (const place of places) {
-      place.distance = distances[place.id];
-    }
-
-    await Promise.all(
-      places.map(async (place) => {
-        place.serviceId = await getServiceId({
-          establishmentId: place.establishment,
-        });
-      })
+  while (page !== -1) {
+    const result = await fetch(
+      `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
     );
 
-    spinner.succeed();
+    const { places: pagePlaces, distanceByPlaces } = result;
+
+    if (!pagePlaces?.length) {
+      page = -1;
+      break;
+    }
+
+    places = [
+      ...places,
+      ...pagePlaces.filter(
+        (place) => place["name_fr"].toLowerCase().indexOf("astrazeneca") === -1
+      ),
+    ];
+
+    distances = { ...distances, ...distanceByPlaces };
+
+    page += 1;
   }
 
-  const availabilitiesSpinner = ora(
+  for (const place of places) {
+    place.distance = distances[place.id];
+  }
+
+  await Promise.all(
+    places.map(async (place) => {
+      place.serviceId = await getServiceId({
+        establishmentId: place.establishment,
+      });
+    })
+  );
+
+  spinner.succeed();
+};
+
+const getPlaces = async ({
+  latitude,
+  longitude,
+  startDate,
+  endDate,
+  maxDistance,
+  postalCode,
+  tolerance,
+  specificDate,
+}) => {
+  if (!places.length) {
+    await populatePlaces({
+      latitude,
+      longitude,
+      startDate,
+      endDate,
+      maxDistance,
+      postalCode,
+      tolerance,
+    });
+  }
+
+  const spinner = ora(
     `Checking ${places.length} locations within ${maxDistance}km of ${postalCode} for availabilities...`
   ).start();
 
@@ -130,21 +154,23 @@ const getPlaces = async ({
     })
   );
 
-  availabilitiesSpinner.succeed();
+  spinner.succeed();
 
   return places
     .filter(
       (place) =>
         place.availabilities.length &&
-        moment(place.availabilities[0]).diff(moment(), "days") <= tolerance
+        (specificDate
+          ? place.availabilities.includes(specificDate)
+          : isWithinDays(place.availabilities[0], tolerance))
     )
     .sort((a, b) => a.distance - b.distance);
 };
 
 const outputAvailabilities = async () => {
-  const { postalCode, distance, tolerance } = options;
+  const { postalCode, distance, tolerance, specificDate } = options;
   const startDate = moment().format("YYYY-MM-DD");
-  const endDate = moment().add(90, "days").format("YYYY-MM-DD");
+  const endDate = moment().add(100, "days").format("YYYY-MM-DD");
 
   const { latitude, longitude } = await getGeometry({ postalCode });
 
@@ -156,6 +182,7 @@ const outputAvailabilities = async () => {
     postalCode,
     maxDistance: distance,
     tolerance,
+    specificDate,
   });
 
   if (!places.length) return;
