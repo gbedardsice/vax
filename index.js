@@ -5,8 +5,8 @@ const moment = require("moment");
 const notifier = require("node-notifier");
 const nodeNotifier = require("node-notifier");
 const ora = require("ora");
-const AsciiTable = require("ascii-table");
-const { memoize, isEqual } = require("lodash");
+const boxen = require("boxen");
+const { memoize, debounce, isEqual } = require("lodash");
 const yargs = require("yargs/yargs");
 const { hideBin } = require("yargs/helpers");
 
@@ -199,18 +199,23 @@ const outputAvailabilities = async () => {
       sound: true,
     });
 
-    const table = new AsciiTable();
-
-    table
-      .addRow(place.name_fr)
-      .addRow(place.formatted_address)
-      .addRow(`Distance: ${place.distance}km`)
-      .addRow(`Availabilities: ${place.availabilities.join(", ")}`)
-      .addRow(
-        `https://clients3.clicsante.ca/${place.establishment}/take-appt?unifiedService=237&portalPlace=${place.id}&portalPostalCode=${postalCode}&lang=fr`
-      );
-
-    console.log(table.toString(), "\n");
+    console.log(
+      boxen(
+        `
+${place.name_fr}
+${place.formatted_address}
+Distance: ${place.distance}km
+Availabilities: ${place.availabilities.join(", ")}
+https://clients3.clicsante.ca/${
+          place.establishment
+        }/take-appt?unifiedService=237&portalPlace=${
+          place.id
+        }&portalPostalCode=${postalCode}&lang=fr
+    `,
+        { padding: 1, borderStyle: "doubleSingle" }
+      ),
+      "\n"
+    );
   }
 };
 
