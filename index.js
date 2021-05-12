@@ -66,65 +66,61 @@ const getAvailabilitiesForPlace = async ({ place, startDate, endDate }) => {
   return availabilities || [];
 };
 
-const getPlaces = memoize(
-  async ({
-    latitude,
-    longitude,
-    startDate,
-    endDate,
-    maxDistance,
-    postalCode,
-    tolerance,
-  }) => {
-    let page = 0;
-    let distances = {};
-    let places = [];
+const getPlaces = async ({
+  latitude,
+  longitude,
+  startDate,
+  endDate,
+  maxDistance,
+  postalCode,
+  tolerance,
+}) => {
+  let page = 0;
+  let distances = {};
+  let places = [];
 
-    const spinner = ora(`Populating locations near ${postalCode}..`).start();
+  const spinner = ora(`Populating locations near ${postalCode}..`).start();
 
-    while (page !== -1) {
-      const result = await fetch(
-        `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
-      );
-
-      const { places: pagePlaces, distanceByPlaces } = result;
-
-      if (!pagePlaces || !pagePlaces.length) {
-        page = -1;
-        break;
-      }
-
-      places = [
-        ...places,
-        ...pagePlaces.filter(
-          (place) =>
-            place["name_fr"].toLowerCase().indexOf("astrazeneca") === -1
-        ),
-      ];
-
-      distances = { ...distances, ...distanceByPlaces };
-
-      page += 1;
-    }
-
-    for (const place of places) {
-      place.distance = distances[place.id];
-    }
-
-    await Promise.all(
-      places.map(async (place) => {
-        place.serviceId = await getServiceId({
-          establishmentId: place.establishment,
-        });
-      })
+  while (page !== -1) {
+    const result = await fetch(
+      `https://api3.clicsante.ca/v3/availabilities?dateStart=${startDate}&dateStop=${endDate}&latitude=${latitude}&longitude=${longitude}&maxDistance=${maxDistance}&postalCode=${postalCode}&page=${page}&serviceUnified=237`
     );
 
-    spinner.succeed();
+    const { places: pagePlaces, distanceByPlaces } = result;
 
-    return places;
-  },
-  isEqual
-);
+    if (!pagePlaces || !pagePlaces.length) {
+      page = -1;
+      break;
+    }
+
+    places = [
+      ...places,
+      ...pagePlaces.filter(
+        (place) => !place.name_fr.toLowerCase().includes("astrazeneca")
+      ),
+    ];
+
+    distances = { ...distances, ...distanceByPlaces };
+
+    page += 1;
+  }
+
+  for (const place of places) {
+    place.distance = distances[place.id];
+  }
+
+  await Promise.all(
+    places.map(async (place) => {
+      place.serviceId = await getServiceId({
+        establishmentId: place.establishment,
+      });
+    })
+  );
+
+  spinner.succeed();
+
+  return places;
+};
 
 const getAvailabilities = async ({
   latitude,
