@@ -61,7 +61,12 @@ const getServiceId = async ({ establishmentId }) => {
 const getAvailabilitiesForPlace = async ({ place, startDate, endDate }) => {
   const { availabilities } = await fetch(
     `https://api3.clicsante.ca/v3/establishments/${place.establishment}/schedules/public?dateStart=${startDate}&dateStop=${endDate}&service=${place.serviceId}&timezone=America/Toronto&places=${place.id}&filter1=1&filter2=0`
-  );
+  ).catch(() => {
+    console.error(
+      `Could not get availabilities for establishmentId=${place.establishment} serviceId=${place.serviceId} placeId=${place.id}. Ignoring this establishment...`
+    );
+    return {};
+  });
 
   return availabilities || [];
 };
@@ -113,6 +118,11 @@ const getPlaces = async ({
     places.map(async (place) => {
       place.serviceId = await getServiceId({
         establishmentId: place.establishment,
+      }).catch(() => {
+        console.error(
+          `Could not get serviceId for establishmentId=${place.establishment}.`
+        );
+        return null;
       });
     })
   );

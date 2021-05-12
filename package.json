@@ -12,6 +12,7 @@
   "scripts": {
     "start": "node index.js"
   },
+  "homepage": "https://github.com/gbedardsice/vax#readme",
   "author": "gbedardsice",
   "license": "MIT",
   "dependencies": {
