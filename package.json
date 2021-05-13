@@ -9,6 +9,7 @@
   "bin": {
     "vax-qc": "./index.js"
   },
+  "repository": "github:gbedardsice/vax",
   "scripts": {
     "start": "node index.js"
   },
