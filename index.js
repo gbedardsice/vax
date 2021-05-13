@@ -10,13 +10,6 @@ const { memoize, debounce, isEqual } = require("lodash");
 const yargs = require("yargs/yargs");
 const { hideBin } = require("yargs/helpers");
 
-const options = yargs(hideBin(process.argv))
-  .option("postalCode", { type: "string", demandOption: true })
-  .option("tolerance", { default: 5, type: "number" })
-  .option("distance", { default: 10, type: "number" })
-  .option("poll", { default: 1, type: "number" })
-  .option("specificDate", { type: "string" }).argv;
-
 const wait = (minutes) =>
   new Promise((resolve) => setTimeout(resolve, minutes * 60 * 1000));
 
@@ -84,7 +77,7 @@ const getPlaces = async ({
   let distances = {};
   let places = [];
 
-  const spinner = ora(`Populating locations near ${postalCode}..`).start();
+  const spinner = ora(`Populating locations near ${postalCode}...`).start();
 
   while (page !== -1) {
     const result = await fetch(
@@ -114,6 +107,7 @@ const getPlaces = async ({
     place.distance = distances[place.id];
   }
 
+  // Fetch `serviceId` individually for each place. This field is required to check for availabilities.
   await Promise.all(
     places.map(async (place) => {
       place.serviceId = await getServiceId({
@@ -132,7 +126,7 @@ const getPlaces = async ({
   return places;
 };
 
-const getAvailabilities = async ({
+const getPlacesWithAvailabilities = async ({
   latitude,
   longitude,
   startDate,
@@ -169,24 +163,23 @@ const getAvailabilities = async ({
   spinner.succeed();
 
   return places
-    .filter(
-      (place) =>
-        place.availabilities.length &&
-        (specificDate
-          ? place.availabilities.includes(specificDate)
-          : isWithinDays(place.availabilities[0], tolerance))
+    .filter((place) => place.availabilities.length)
+    .filter((place) =>
+      specificDate
+        ? place.availabilities.includes(specificDate)
+        : isWithinDays(place.availabilities[0], tolerance)
     )
     .sort((a, b) => a.distance - b.distance);
 };
 
-const outputAvailabilities = async () => {
-  const { postalCode, distance, tolerance, specificDate } = options;
+const outputAvailabilities = async (opts) => {
+  const { postalCode, distance, tolerance, specificDate } = opts;
   const startDate = moment().format("YYYY-MM-DD");
   const endDate = moment().add(100, "days").format("YYYY-MM-DD");
 
   const { latitude, longitude } = await getGeometry({ postalCode });
 
-  const places = await getAvailabilities({
+  const places = await getPlacesWithAvailabilities({
     latitude,
     longitude,
     startDate,
@@ -225,19 +218,26 @@ https://clients3.clicsante.ca/${
   }
 };
 
-const loop = async () => {
+const loop = async (opts) => {
   while (true) {
-    await outputAvailabilities();
+    await outputAvailabilities(opts);
 
     const spinner = ora({
-      text: `Waiting ${options.poll} minute(s) before checking again...`,
+      text: `Waiting ${opts.poll} minute(s) before checking again...`,
       spinner: "soccerHeader",
     }).start();
 
-    await wait(options.poll);
+    await wait(opts.poll);
 
     spinner.succeed();
   }
 };
 
-loop();
+const options = yargs(hideBin(process.argv))
+  .option("postalCode", { type: "string", demandOption: true })
+  .option("tolerance", { default: 5, type: "number" })
+  .option("distance", { default: 10, type: "number" })
+  .option("poll", { default: 1, type: "number" })
+  .option("specificDate", { type: "string" }).argv;
+
+loop(options);
