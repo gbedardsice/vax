@@ -21,7 +21,7 @@ const wait = (minutes) =>
   new Promise((resolve) => setTimeout(resolve, minutes * 60 * 1000));
 
 const isWithinDays = (date, days) =>
-  moment(date).diff(moment(), "days") <= days;
+  moment(date).diff(moment().startOf("day"), "days") <= days;
 
 const fetch = (url, opts = {}) => {
   return nodeFetch(url, {
